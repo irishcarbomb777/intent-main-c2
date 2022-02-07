@@ -33,7 +33,7 @@ void lsm6dsr_write_register(spi_device_handle_t *spi, char address, char value)
   t.length = 16;
   t.tx_buffer = sendbuf;
   t.rx_buffer = recvbuf;
-  ESP_ERROR_CHECK(spi_device_transmit(*spi, &t));
+  ESP_ERROR_CHECK(spi_device_polling_transmit(*spi, &t));
 };
 
 char lsm6dsr_read_register(spi_device_handle_t *spi, char address)
@@ -46,9 +46,61 @@ char lsm6dsr_read_register(spi_device_handle_t *spi, char address)
   t.length = 16;
   t.tx_buffer = sendbuf;
   t.rx_buffer = recvbuf;
-  ESP_ERROR_CHECK(spi_device_transmit(*spi, &t));
+  ESP_ERROR_CHECK(spi_device_polling_transmit(*spi, &t));
   return recvbuf[1];
 };
+
+void lsm6dsr_read_single_xl_measurement(spi_device_handle_t *spi, char *recvbuf)
+{
+  // Prep SPI Transaction
+  spi_transaction_t t;
+  memset(&t, 0, sizeof(t));
+  char sendbuf[7];
+  sendbuf[0] = (OUTX_L_A | 0x80);
+  t.length = (7*8);
+  t.tx_buffer = sendbuf;
+  t.rx_buffer = recvbuf;
+  ESP_ERROR_CHECK(spi_device_polling_transmit(*spi, &t));
+}
+
+void lsm6dsr_parse_read_data_buffer(char *p_read_data_buffer, int16_t *p_acc_xyz_data_buffer)
+{
+  // Extract Data
+  uint16_t acc_xyz_data[3];
+  acc_xyz_data[0] = ((*(p_read_data_buffer+2)) << 8 | (*(p_read_data_buffer+1)));
+  acc_xyz_data[1] = ((*(p_read_data_buffer+4)) << 8 | (*(p_read_data_buffer+3)));
+  acc_xyz_data[2] = ((*(p_read_data_buffer+6)) << 8 | (*(p_read_data_buffer+5)));
+  int16_t acc_xyz_data_signed[3];
+
+  for (int i=0; i < 3; i++)
+  {
+    if (acc_xyz_data[i] > 32767)
+    {
+      acc_xyz_data[i] = ~acc_xyz_data[i];
+      acc_xyz_data[i]++;
+      acc_xyz_data_signed[i] =  -((int16_t)acc_xyz_data[i]);
+    }
+    else
+      acc_xyz_data_signed[i] = (int16_t) acc_xyz_data[i];
+    *(p_acc_xyz_data_buffer+i) = acc_xyz_data_signed[i];
+  }
+}
+
+bool lsm6dsr_check_data_ready(spi_device_handle_t *spi)
+{
+  // Send SPI Transaction 
+  spi_transaction_t t;
+  memset(&t, 0, sizeof(t));
+  char sendbuf[2] = {(STATUS_REG | 0x80), 0x00};
+  char recvbuf[2];
+  t.length = 16;
+  t.tx_buffer = sendbuf;
+  t.rx_buffer = recvbuf;
+  ESP_ERROR_CHECK(spi_device_transmit(*spi, &t));
+  recvbuf[1] &= 0x01;
+  bool data_ready = recvbuf[1];
+  return data_ready;
+}
 
 void lsm6dsr_batch_read_fifo(spi_device_handle_t *spi, int watermark_threshold, char *p_fifo_data_buffer)
 {
@@ -62,7 +114,7 @@ void lsm6dsr_batch_read_fifo(spi_device_handle_t *spi, int watermark_threshold, 
   t.length = (7*8*watermark_threshold)+8;
   t.tx_buffer = sendbuf;
   t.rx_buffer = p_fifo_data_buffer;
-  ESP_ERROR_CHECK(spi_device_transmit(*spi, &t));
+  ESP_ERROR_CHECK(spi_device_polling_transmit(*spi, &t));
 };
 
 char lsm6dsr_write_read_register(spi_device_handle_t *spi, char address, char value)
@@ -75,16 +127,11 @@ char lsm6dsr_write_read_register(spi_device_handle_t *spi, char address, char va
   t.length = 16;
   t.tx_buffer = sendbuf;
   t.rx_buffer = recvbuf;
-  ESP_ERROR_CHECK(spi_device_transmit(*spi, &t));
+  ESP_ERROR_CHECK(spi_device_polling_transmit(*spi, &t));
 
   // Read SPI Transaction
-  // memset(&t, 0, sizeof(t));
   sendbuf[0] = (address | 0x80);
-  // sendbuf[1] = 0x00;
-  // t.length = 16;
-  // t.tx_buffer = sendbuf;
-  // t.rx_buffer = recvbuf;
-  ESP_ERROR_CHECK(spi_device_transmit(*spi, &t));
+  ESP_ERROR_CHECK(spi_device_polling_transmit(*spi, &t));
   return recvbuf[1];
 }
 
@@ -257,6 +304,32 @@ void lsm6dsr_FIFO_stop(spi_device_handle_t *spi)
 {
   lsm6dsr_write_register(spi, FIFO_CTRL4, 0x00); 
 }
+
+// Create lsm6dsr state change methods
+void lsm6dsr_enter_sleep_active_state(spi_device_handle_t *spi)
+{
+
+  // Turn off all interrupts
+  lsm6dsr_write_register(spi, INT1_CTRL, 0x00);
+
+  // Turn off XL
+  lsm6dsr_write_register(spi, CTRL1_XL, 0x08);
+
+  // Turn off Gyroscope
+  lsm6dsr_write_register(spi, CTRL2_G, 0x04);
+
+  // Set to low power
+  lsm6dsr_write_register(spi, CTRL6_C, 0x10);
+
+  // Set Data Ready Interrupt
+  lsm6dsr_write_register(spi, INT1_CTRL, 0x01);
+
+  // Set ODR to 52Hz
+  lsm6dsr_write_register(spi, CTRL1_XL, 0x38);
+
+}
+
+
 /********************************************************
 ************ Startup Routine Code ***********************
 ********************************************************/
@@ -282,7 +355,7 @@ spi_device_handle_t* lsm6dsr_startup_routine()
     .command_bits     = 0,
     .address_bits     = 0,
     .dummy_bits       = 0,
-    .clock_speed_hz   = 5E5,
+    .clock_speed_hz   = 1E5,
     .duty_cycle_pos   = 128,
     .mode             = 3,
     .spics_io_num     = PIN_CS,
@@ -305,14 +378,14 @@ spi_device_handle_t* lsm6dsr_startup_routine()
   };
   lsm6dsr_initialize_gyroscope(p_lsm6dsr_spi_handle, &gyro_config);
 
-  // Initialize Activity/Inactivity Interrupt
-  lsm6dsr_activity_inactivity_config_t activity_config = {
-    .activity_time = ACTIVITY_TIME_320ms,
-    .activity_inactivity_thresh_LSB_size = LSB_EQUALS_RESOLUTION_OVER_256,
-    .activity_inactivity_thresh_LSBs = 5,
-    .inactivity_time_ODRs = INACTIVITY_TIME_7680_ODRs,
-  };
-  lsm6dsr_initialize_activity_inactivity_interrupt(p_lsm6dsr_spi_handle, &activity_config);
+  // // Initialize Activity/Inactivity Interrupt
+  // lsm6dsr_activity_inactivity_config_t activity_config = {
+  //   .activity_time = ACTIVITY_TIME_320ms,
+  //   .activity_inactivity_thresh_LSB_size = LSB_EQUALS_RESOLUTION_OVER_256,
+  //   .activity_inactivity_thresh_LSBs = 5,
+  //   .inactivity_time_ODRs = INACTIVITY_TIME_7680_ODRs,
+  // };
+  // lsm6dsr_initialize_activity_inactivity_interrupt(p_lsm6dsr_spi_handle, &activity_config);
 
   // Initialize FIFO
   lsm6dsr_fifo_config_t fifo_config = {

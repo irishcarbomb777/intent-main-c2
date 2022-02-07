@@ -23,66 +23,59 @@ void initialize_gpio_w_isr(gpio_config_t *cfg)
   gpio_install_isr_service(ESP_INTR_FLAG_EDGE); 
 }
 
+void gpio_initialize_output_led()
+{
+  gpio_config_t gpio_led_config = {
+    .intr_type = GPIO_INTR_DISABLE,
+    .mode = GPIO_MODE_OUTPUT,
+    .pin_bit_mask = LED_OUTPUT_MASK,
+    .pull_down_en = 0,
+    .pull_up_en = 0,
+  };
+  gpio_config(&gpio_led_config);
+}
+
 /********************************************************
 ************ Startup Routine Code ***********************
 ********************************************************/
 
 // Set define constants
 #define INT1_PIN 21
-#define INT2_PIN 22
+#define INT_PIN_MASK (1ULL<<INT1_PIN)
 
-#define INT_PIN_MASK (1ULL<<INT1_PIN | 1ULL<<INT2_PIN)
+static void gpio_data_ready_isr_handler(void *arg);
 
-static void gpio_activity_inactivity_isr_handler(void *arg);
-static void gpio_fifo_watermark_isr_handler(void *arg);
-
-void gpio_startup_routine(task_handles_t *task_handles)
+void gpio_startup_routine(rtos_tasks_shared_resources_t *rtos_task_resources)
 {
   // Parse out task handles
-  SemaphoreHandle_t *p_xActivityToggleSemaphore   = task_handles->p_xActivityToggleSemaphore;
-  SemaphoreHandle_t *p_xFifoReadySemaphore = task_handles->p_xFifoReadySemaphore;
+  SemaphoreHandle_t *p_xDataReadySemaphore   = rtos_task_resources->p_xDataReadySemaphore;
 
-  // Initialize activity/inactivity interrupt
+  // Initialize Data Ready interrupt
   gpio_config_t gpio_activity_inactivity_config = {
     .intr_type = GPIO_INTR_POSEDGE,
     .mode = GPIO_MODE_INPUT,
     .pin_bit_mask = INT_PIN_MASK,
-    .pull_down_en = 1,
+    .pull_down_en = 0,
     .pull_up_en = 0,
   };
   initialize_gpio_w_isr(&gpio_activity_inactivity_config);
-  gpio_isr_handler_add( INT1_PIN, gpio_activity_inactivity_isr_handler, (void*)p_xActivityToggleSemaphore);
-  gpio_isr_handler_add( INT2_PIN, gpio_fifo_watermark_isr_handler, (void*)p_xFifoReadySemaphore);
+  gpio_isr_handler_add( INT1_PIN, gpio_data_ready_isr_handler, (void*)p_xDataReadySemaphore);
+
 }
 
-
-static void gpio_activity_inactivity_isr_handler(void *arg)
+static void gpio_data_ready_isr_handler(void *arg)
 {
-  // ESP_LOGI("MAIN_TAfdsafG", " Alarm has been raised ");
   // Create force scheduler variable
   BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
   // Parse Activity Task Handle out of Void Pointer
-  SemaphoreHandle_t xActivityToggleSemaphore = *(SemaphoreHandle_t*) arg;
+  SemaphoreHandle_t xDataReadySemaphore = *(SemaphoreHandle_t*) arg;
   
   // Send Notification to Activity Task
-  xSemaphoreGiveFromISR(xActivityToggleSemaphore, &xHigherPriorityTaskWoken);
+  xSemaphoreGiveFromISR(xDataReadySemaphore, &xHigherPriorityTaskWoken);
   portYIELD_FROM_ISR( xHigherPriorityTaskWoken );
 }
 
-static void gpio_fifo_watermark_isr_handler(void *arg)
-{
-  // ESP_LOGI("MAIN_TAfdsafG", " Alarm has been raised ");
-  // Create force scheduler variable
-  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-
-  // Parse activity task handle from arg
-  SemaphoreHandle_t xFifoReadySemaphore = *(SemaphoreHandle_t*) arg;
-
-  // Send Notification to Activity Task
-  xSemaphoreGiveFromISR( xFifoReadySemaphore, &xHigherPriorityTaskWoken );
-  portYIELD_FROM_ISR( xHigherPriorityTaskWoken );
-}
 
 
 

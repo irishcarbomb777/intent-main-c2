@@ -10,6 +10,21 @@
 #include "freertos/semphr.h"
 
 // Data Structures
+typedef struct state_machine_task_resources_t {
+  // Communication Protocols
+  spi_device_handle_t *p_spi;
+
+  // Signal Semaphores
+  SemaphoreHandle_t *p_xDataReadySemaphore;
+  SemaphoreHandle_t *p_xNetworkingInactiveSemaphore;
+  SemaphoreHandle_t *p_xConnectedClientsSemaphore;
+  SemaphoreHandle_t *p_xNetworkingActiveSemaphore;
+
+  // Shared Data Buffers
+  char *p_connected_clients_count;
+}
+
+
 typedef struct sleep_task_resources_t {
   // Communication Protocols
   spi_device_handle_t *p_spi;
