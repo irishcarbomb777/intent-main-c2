@@ -17,6 +17,8 @@
 #include "lsm6dsr.h"
 #include "rtos_tasks.h"
 #include "gpio.h"
+#include "wifi.h"
+#include "intent_mqtt.h"
 
 void app_main(void)
 {
@@ -24,7 +26,6 @@ void app_main(void)
   gpio_initialize_output_led();
   rtos_tasks_shared_resources_t *p_rtos_task_resources = rtos_tasks_startup_routine(p_spi);
   gpio_startup_routine(p_rtos_task_resources);
-
   while(1)
   {
     vTaskDelay(portMAX_DELAY);

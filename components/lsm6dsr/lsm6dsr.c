@@ -36,6 +36,19 @@ void lsm6dsr_write_register(spi_device_handle_t *spi, char address, char value)
   ESP_ERROR_CHECK(spi_device_polling_transmit(*spi, &t));
 };
 
+void lsm6dsr_write_double_register(spi_device_handle_t *spi, char address, char reg1_value, char reg2_value)
+{
+  // Send SPI Transaction 
+  spi_transaction_t t;
+  memset(&t, 0, sizeof(t));
+  char sendbuf[3] = {address, reg1_value, reg2_value};
+  char recvbuf[3];
+  t.length = 24;
+  t.tx_buffer = sendbuf;
+  t.rx_buffer = recvbuf;
+  ESP_ERROR_CHECK(spi_device_polling_transmit(*spi, &t));
+}
+
 char lsm6dsr_read_register(spi_device_handle_t *spi, char address)
 {
   // Send SPI Transaction 
@@ -114,7 +127,7 @@ void lsm6dsr_batch_read_fifo(spi_device_handle_t *spi, int watermark_threshold, 
   t.length = (7*8*watermark_threshold)+8;
   t.tx_buffer = sendbuf;
   t.rx_buffer = p_fifo_data_buffer;
-  ESP_ERROR_CHECK(spi_device_polling_transmit(*spi, &t));
+  ESP_ERROR_CHECK(spi_device_transmit(*spi, &t));
 };
 
 char lsm6dsr_write_read_register(spi_device_handle_t *spi, char address, char value)
@@ -277,15 +290,17 @@ void lsm6dsr_initialize_FIFO(spi_device_handle_t *spi, lsm6dsr_fifo_config_t *cf
       break;
   }
 
-  // Set FIFO Write speed datarates
-  // Read current ODR's from CTRL1_XL and CTRL2_GY
-  char ODR_XL_current = lsm6dsr_read_register(spi, CTRL1_XL);
-  ODR_XL_current = (0xF0 & ODR_XL_current) >> 4;
-  char ODR_G_current = lsm6dsr_read_register(spi, CTRL2_G);
-  ODR_G_current = (0xF0 & ODR_G_current);
+  // // Set FIFO Write speed datarates
+  // // Read current ODR's from CTRL1_XL and CTRL2_GY
+  // char ODR_XL_current = lsm6dsr_read_register(spi, CTRL1_XL);
+  // ODR_XL_current = (0xF0 & ODR_XL_current) >> 4;
+  // char ODR_G_current = lsm6dsr_read_register(spi, CTRL2_G);
+  // ODR_G_current = (0xF0 & ODR_G_current);
 
+  // Write FIFO to MAX data rates
   // Prep and send command for FIFO_CTRL3 register (Set FIFO ODRs)
-  char FIFO_CTRL3_command = (0x00 | ODR_XL_current) | ODR_G_current;
+  // char FIFO_CTRL3_command = (0x00 | ODR_XL_current) | ODR_G_current;
+  char FIFO_CTRL3_command = 0xAA;
   register_value = lsm6dsr_write_read_register(spi, FIFO_CTRL3, FIFO_CTRL3_command);
   ESP_LOGI(TAG, "FIFO_CTRL3 set to: %x", register_value);
 
@@ -297,7 +312,7 @@ void lsm6dsr_initialize_FIFO(spi_device_handle_t *spi, lsm6dsr_fifo_config_t *cf
 
 void lsm6dsr_FIFO_start(spi_device_handle_t *spi)
 {
-  lsm6dsr_write_register(spi, FIFO_CTRL4, 0x05);
+  lsm6dsr_write_register(spi, FIFO_CTRL4, 0x06);
 }
 
 void lsm6dsr_FIFO_stop(spi_device_handle_t *spi)
@@ -308,7 +323,6 @@ void lsm6dsr_FIFO_stop(spi_device_handle_t *spi)
 // Create lsm6dsr state change methods
 void lsm6dsr_enter_sleep_active_state(spi_device_handle_t *spi)
 {
-
   // Turn off all interrupts
   lsm6dsr_write_register(spi, INT1_CTRL, 0x00);
 
@@ -326,7 +340,52 @@ void lsm6dsr_enter_sleep_active_state(spi_device_handle_t *spi)
 
   // Set ODR to 52Hz
   lsm6dsr_write_register(spi, CTRL1_XL, 0x38);
+}
 
+void lsm6dsr_enter_ready_state(spi_device_handle_t *spi)
+{
+  // Turn off all interrupts
+  lsm6dsr_write_register(spi, INT1_CTRL, 0x00);
+
+  // Turn off XL
+  lsm6dsr_write_register(spi, CTRL1_XL, 0x08);
+
+  // Turn off Gyroscope
+  lsm6dsr_write_register(spi, CTRL2_G , 0x04);
+  
+  // Turn off FIFO
+  lsm6dsr_FIFO_stop(spi);
+
+  // Set to high power
+  lsm6dsr_write_register(spi, CTRL6_C , 0x00);
+
+  // Set Data Ready Interrupt
+  lsm6dsr_write_register(spi, INT1_CTRL, 0x01);
+
+  // Set Accelerometer ODR to 208Hz
+  lsm6dsr_write_register(spi, CTRL1_XL, 0x58);  
+}
+
+void lsm6dsr_enter_running_state(spi_device_handle_t *spi)
+{
+  // Turn off all interrupts
+  lsm6dsr_write_register(spi, INT1_CTRL, 0x00);
+
+  // Turn off XL
+  lsm6dsr_write_register(spi, CTRL1_XL, 0x08);
+
+  // Turn off Gyroscope
+  lsm6dsr_write_register(spi, CTRL2_G , 0x04);
+
+  // Set FIFO Watermark Interrupt
+  lsm6dsr_write_register(spi, INT1_CTRL, 0x08);
+
+  // Set both XL and Gyroscope to MAX data rate
+  lsm6dsr_write_register(spi, CTRL1_XL, 0xA8);
+  lsm6dsr_write_register(spi, CTRL2_G, 0xA4);
+
+  // Start the FIFO
+  lsm6dsr_FIFO_start(spi);
 }
 
 
@@ -355,7 +414,7 @@ spi_device_handle_t* lsm6dsr_startup_routine()
     .command_bits     = 0,
     .address_bits     = 0,
     .dummy_bits       = 0,
-    .clock_speed_hz   = 1E5,
+    .clock_speed_hz   = 5E6,
     .duty_cycle_pos   = 128,
     .mode             = 3,
     .spics_io_num     = PIN_CS,
@@ -389,7 +448,7 @@ spi_device_handle_t* lsm6dsr_startup_routine()
 
   // Initialize FIFO
   lsm6dsr_fifo_config_t fifo_config = {
-    .watermark_interrupt_setting = WATERMARK_INT2_ON,
+    .watermark_interrupt_setting = WATERMARK_INT1_ON,
     .watermark_byte_threshold = WATERMARK_THRESHOLD,
     .fifo_mode = BYPASS_MODE, 
   };

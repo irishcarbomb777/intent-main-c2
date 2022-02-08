@@ -289,6 +289,8 @@ void lsm6dsr_initialize_accelerometer(spi_device_handle_t *spi, lsm6dsr_accelero
 void lsm6dsr_initialize_gyroscope(spi_device_handle_t *spi, lsm6dsr_gyroscope_config_t *cfg);
 void lsm6dsr_initialize_activity_inactivity_interrupt(spi_device_handle_t *spi, lsm6dsr_activity_inactivity_config_t *cfg);
 void lsm6dsr_enter_sleep_active_state(spi_device_handle_t *spi);
+void lsm6dsr_enter_ready_state(spi_device_handle_t *spi);
+void lsm6dsr_enter_running_state(spi_device_handle_t *spi);
 void lsm6dsr_read_single_xl_measurement(spi_device_handle_t *spi, char *recvbuf);
 void lsm6dsr_parse_read_data_buffer(char *p_read_data_buffer, int16_t *p_acc_xyz_data_buffer);
 bool lsm6dsr_check_data_ready(spi_device_handle_t *spi);

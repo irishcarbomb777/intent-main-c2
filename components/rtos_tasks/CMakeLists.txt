@@ -1,4 +1,4 @@
-idf_component_register(SRCS "rtos_tasks.c"
+idf_component_register(SRCS "rtos_tasks.c" "state_machine.c" "intent_mqtt.c"
                     REQUIRES "mqtt"
                     INCLUDE_DIRS "."
                     INCLUDE_DIRS "../wifi"
