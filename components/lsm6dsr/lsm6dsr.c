@@ -414,7 +414,7 @@ spi_device_handle_t* lsm6dsr_startup_routine()
     .command_bits     = 0,
     .address_bits     = 0,
     .dummy_bits       = 0,
-    .clock_speed_hz   = 5E6,
+    .clock_speed_hz   = 5E5,
     .duty_cycle_pos   = 128,
     .mode             = 3,
     .spics_io_num     = PIN_CS,

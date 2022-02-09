@@ -104,7 +104,6 @@ void sleep_state(sleep_state_resources_t *p_sleep_state_resources, sensor_state_
       // Calculate Magnitude
       acc_magnitude = (pow( (pow( (double) acc_xyz_data_buffer[0], 2) + pow((double) acc_xyz_data_buffer[1], 2) + pow((double) acc_xyz_data_buffer[2], 2)), 0.5 ));
       acc_magnitude = abs(acc_magnitude - acc_magnitude_offset);
-
       // Check the first and last data point and modify active sample count
       if (acc_magnitude > acc_activity_threshold)
       {
@@ -269,6 +268,7 @@ void active_state(active_state_resources_t *p_active_state_resources, sensor_sta
     else
     {
       ESP_LOGI(TAG, "Data Ready Interrupt Timed Out!");
+      lsm6dsr_read_single_xl_measurement(p_spi, read_data_buffer);
     }
   }
 }
@@ -313,18 +313,6 @@ void ready_state(ready_state_resources_t *p_ready_state_resources, sensor_state_
     lsm6dsr_parse_read_data_buffer(data_read_buffer, acc_xyz_data_buffer);
   }
 
-  // ESP_LOGI(TAG, "Line 313 magnitude: %.2f", acc_magnitude);
-  // while (acc_magnitude > acc_magnitude_offset)
-  // {
-  //   xSemaphoreTake(*p_xDataReadySemaphore, pdMS_TO_TICKS(1000));
-  //   lsm6dsr_read_single_xl_measurement(p_spi, data_read_buffer);
-  //   lsm6dsr_parse_read_data_buffer(data_read_buffer, acc_xyz_data_buffer);
-  //   acc_magnitude = (pow( (pow( (double) acc_xyz_data_buffer[0], 2) + pow((double) acc_xyz_data_buffer[1], 2) + pow((double) acc_xyz_data_buffer[2], 2)), 0.5 ));
-  //   acc_magnitude = abs(acc_magnitude - acc_magnitude_offset);
-  //   ESP_LOGI(TAG, "Line 321 magnitude: %.2f", acc_magnitude);
-  // }
-
-
   // Fill the Velocity Magnitude Data Window
   for (int i=1; i < mid_ODR_N; i++)
   {
@@ -348,8 +336,6 @@ void ready_state(ready_state_resources_t *p_ready_state_resources, sensor_state_
   // Check if Significant Motion was found in fill stage
   if (position_integral > position_threshold)
   {
-    ESP_LOGI(TAG, "position integral HIT is %.2f", position_integral);
-    ESP_LOGI(TAG, "LINE 338");
     *p_sensor_state = SENSOR_RUNNING;
     memset(&data_read_buffer, 0, sizeof(data_read_buffer));
     memset(&acc_xyz_data_buffer, 0, sizeof(acc_xyz_data_buffer));
@@ -474,7 +460,7 @@ void running_state(running_state_resources_t *p_running_state_resources, sensor_
       for (int i=1; i < 2096; i = i+7)
       {
         interval_count++;
-        if ( ((p_fifo_data_buffer[i]>>3) == 2) && (interval_count > 50))
+        if ( ((p_fifo_data_buffer[i]>>3) == 2) && (interval_count > 75))
         {
           interval_count = 0;
           if (p_acc_range_buffer[p_acc_range_buffer_memory_pointer] < 500 && (p_acc_range_buffer[p_acc_range_buffer_memory_pointer]!=0))
