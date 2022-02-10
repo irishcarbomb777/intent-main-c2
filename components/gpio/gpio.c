@@ -35,6 +35,34 @@ void gpio_initialize_output_led()
   gpio_config(&gpio_led_config);
 }
 
+void vLEDRedState()
+{
+  gpio_set_level(LED_RED_PIN, 1);
+  gpio_set_level(LED_BLUE_PIN, 0);
+  gpio_set_level(LED_GREEN_PIN, 0);
+}
+
+void vLEDGreenState()
+{
+  gpio_set_level(LED_RED_PIN, 0);
+  gpio_set_level(LED_BLUE_PIN, 0);
+  gpio_set_level(LED_GREEN_PIN, 1);
+}
+
+void vLEDBlueState()
+{
+  gpio_set_level(LED_RED_PIN, 0);
+  gpio_set_level(LED_BLUE_PIN, 1);
+  gpio_set_level(LED_GREEN_PIN, 0);
+}
+
+void vLEDPurpleState()
+{
+  gpio_set_level(LED_RED_PIN, 1);
+  gpio_set_level(LED_BLUE_PIN, 1);
+  gpio_set_level(LED_GREEN_PIN, 0);
+}
+
 /********************************************************
 ************ Startup Routine Code ***********************
 ********************************************************/

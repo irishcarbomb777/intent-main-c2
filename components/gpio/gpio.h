@@ -14,3 +14,8 @@
 void gpio_initialize_output_led();
 void initialize_gpio_w_isr(gpio_config_t *cfg);
 void gpio_startup_routine(rtos_tasks_shared_resources_t *task_handles);
+
+void vLEDBlueState();
+void vLEDRedState();
+void vLEDPurpleState();
+void vLEDGreenState();

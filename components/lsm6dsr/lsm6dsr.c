@@ -414,7 +414,7 @@ spi_device_handle_t* lsm6dsr_startup_routine()
     .command_bits     = 0,
     .address_bits     = 0,
     .dummy_bits       = 0,
-    .clock_speed_hz   = 5E5,
+    .clock_speed_hz   = 1E6,
     .duty_cycle_pos   = 128,
     .mode             = 3,
     .spics_io_num     = PIN_CS,
@@ -436,15 +436,6 @@ spi_device_handle_t* lsm6dsr_startup_routine()
     .resolution = PLUS_MINUS_500DPS,
   };
   lsm6dsr_initialize_gyroscope(p_lsm6dsr_spi_handle, &gyro_config);
-
-  // // Initialize Activity/Inactivity Interrupt
-  // lsm6dsr_activity_inactivity_config_t activity_config = {
-  //   .activity_time = ACTIVITY_TIME_320ms,
-  //   .activity_inactivity_thresh_LSB_size = LSB_EQUALS_RESOLUTION_OVER_256,
-  //   .activity_inactivity_thresh_LSBs = 5,
-  //   .inactivity_time_ODRs = INACTIVITY_TIME_7680_ODRs,
-  // };
-  // lsm6dsr_initialize_activity_inactivity_interrupt(p_lsm6dsr_spi_handle, &activity_config);
 
   // Initialize FIFO
   lsm6dsr_fifo_config_t fifo_config = {
