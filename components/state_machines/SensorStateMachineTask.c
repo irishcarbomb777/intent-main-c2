@@ -3,6 +3,18 @@
 #include <stdlib.h>
 #include <math.h>
 #include "gpio.h"
+#include "lsm6dsr.h"
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/projdefs.h"
+#include "freertos/queue.h"
+
+#include "driver/spi_master.h"
+#include "driver/gpio.h"
+#include "esp_log.h"
+#include "esp_system.h"
+
 #include "SensorStateMachineTask.h"
 
 // Sensor State Machine Defines
@@ -11,16 +23,16 @@ void SensorStateMachineTask(void *arg)
 {
   // Create Logging Tag
   static const char *TAG = "Sensor State Machine Task Log";
-
   // Create Sensor State
-  SensorStateEnum_t eSensorState = SENSOR_SLEEP;
-
+  SensorStateEnum_t eSensorState         = SENSOR_SLEEP;
+  SensorStateEnum_t ePreviousSensorState = SENSOR_SLEEP;
   // Type cast Sensor State Machine Context from void pointer to Context Pointer
   SensorStateMachineTaskContext_t *p_ctxSensorStateMachineTaskContext = (SensorStateMachineTaskContext_t*) arg;
 
   // Create Sleep State Context
   SleepStateContext_t ctxSleepState = {
     .p_eSensorState = &eSensorState,
+    .p_ePreviousSensorState = &ePreviousSensorState,
     .p_spi = p_ctxSensorStateMachineTaskContext->p_spi,
     .p_xDataReadySemaphore = p_ctxSensorStateMachineTaskContext->p_xDataReadySemaphore,
     .p_xNetworkInactiveSemaphore = p_ctxSensorStateMachineTaskContext->p_xNetworkInactiveSemaphore,
@@ -29,6 +41,7 @@ void SensorStateMachineTask(void *arg)
   // Create Active State Context
   ActiveStateContext_t ctxActiveState = {
     .p_eSensorState = &eSensorState,
+    .p_ePreviousSensorState = &ePreviousSensorState,
     .p_spi = p_ctxSensorStateMachineTaskContext->p_spi,
     .p_xConnectedClientsSemaphore = p_ctxSensorStateMachineTaskContext->p_xConnectedClientsSemaphore,
     .p_xNetworkActiveSemaphore = p_ctxSensorStateMachineTaskContext->p_xNetworkActiveSemaphore,
@@ -38,22 +51,24 @@ void SensorStateMachineTask(void *arg)
   // Create Ready State Context
   ReadyStateContext_t ctxReadyState = {
     .p_eSensorState = &eSensorState,
+    .p_ePreviousSensorState = &ePreviousSensorState,
     .p_spi = p_ctxSensorStateMachineTaskContext->p_spi,
     .p_xDataReadySemaphore = p_ctxSensorStateMachineTaskContext->p_xDataReadySemaphore,
+    .p_xDataTransmitQueue = p_ctxSensorStateMachineTaskContext->p_xDataTransmitQueue,
     .p_xConnectedClientsSemaphore = p_ctxSensorStateMachineTaskContext->p_xConnectedClientsSemaphore,
     .p_cConnectedClientsCount = p_ctxSensorStateMachineTaskContext->p_cConnectedClientsCount,
   };
 
-  // Create Running State Context
-  RunningStateContext_t ctxRunningState = {
-    .p_eSensorState = &eSensorState,
-    .p_spi = p_ctxSensorStateMachineTaskContext->p_spi,
-    .p_xStartSetSemaphore = p_ctxSensorStateMachineTaskContext->p_xStartSetSemaphore,
-    .p_xDataTransmitSemaphore = p_ctxSensorStateMachineTaskContext->p_xDataTransmitSemaphore,
-    .p_xEndSetSemaphore = p_ctxSensorStateMachineTaskContext->p_xEndSetSemaphore,
-    .p_xDataReadySemaphore = p_ctxSensorStateMachineTaskContext->p_xDataReadySemaphore,
-    .p_cDataTransmitBuffer = p_ctxSensorStateMachineTaskContext->p_cDataTransmitBuffer,
-  };
+  // // Create Running State Context
+  // RunningStateContext_t ctxRunningState = {
+  //   .p_eSensorState = &eSensorState,
+  //   .p_ePreviousSensorState = &ePreviousSensorState,
+  //   .p_spi = p_ctxSensorStateMachineTaskContext->p_spi,
+  //   .p_xStartSetSemaphore = p_ctxSensorStateMachineTaskContext->p_xStartSetSemaphore,
+  //   .p_xDataTransmitQueue = p_ctxSensorStateMachineTaskContext->p_xDataTransmitQueue,
+  //   .p_xEndSetSemaphore = p_ctxSensorStateMachineTaskContext->p_xEndSetSemaphore,
+  //   .p_xDataReadySemaphore = p_ctxSensorStateMachineTaskContext->p_xDataReadySemaphore,
+  // };
 
   // Set lsm6dsr to Initial Sleep State 
   lsm6dsr_sleep_active_state(p_ctxSensorStateMachineTaskContext->p_spi);
@@ -76,7 +91,9 @@ void SensorStateMachineTask(void *arg)
         break;
       case SENSOR_RUNNING:
         vLEDGreenState();
-        vRunningState(&ctxRunningState);
+        eSensorState = SENSOR_READY;
+        vTaskDelay(pdMS_TO_TICKS(3000));
+        // vRunningState(&ctxRunningState);
         break;
       default:
         break;
@@ -107,7 +124,7 @@ void lsm6dsr_sleep_active_state(spi_device_handle_t *p_spi)
   lsm6dsr_write_register(p_spi, CTRL1_XL, 0x38);
 }
 
-void read_write_magnitude_to_buffer(spi_device_handle_t *p_spi, double *p_dBuffer, unsigned int *p_uintIndex)
+void read_write_magnitude_to_buffer(spi_device_handle_t *p_spi, double *p_dBuffer, uint *p_uintIndex)
 {
   // Create Static Data Buffers
   static char data_read_buffer[7];
@@ -123,48 +140,32 @@ void read_write_magnitude_to_buffer(spi_device_handle_t *p_spi, double *p_dBuffe
   *(p_dBuffer+(*p_uintIndex)) = magnitude;
 }
 
+
 uint circular_add(int x, uint val, uint buffer_length)
 {
-  // Create Logging Tag
-  static const char *TAG = "Circular Add Log";
-  if (is_power_of_two(buffer_length))
+  if ((val+x)<buffer_length)
   {
-    uint mask = ~buffer_length;
-    val = (((val | mask) + x) & buffer_length);
+    val += x;
     return val;
   }
   else
   {
-    ESP_LOGI(TAG, "Buffer Length Specified is not a power of 2");
-    return 0;
+    val = (val+x)-buffer_length;
+    return val;
   }
 }
 
 uint circular_subtract(int x, uint val, uint buffer_length)
 {
-  // Create Logging Tag
-  static const char *TAG = "Circular Subtract Log";
-  if (is_power_of_two(buffer_length))
+  if (x>val)
   {
-    uint mask = ~buffer_length;
-    val = (((val | mask) - x) & buffer_length);
+    val = buffer_length-(x-val);
     return val;
   }
   else
   {
-    ESP_LOGI(TAG, "Buffer Length Specified is not a power of 2");
-    return 0;
+    val -= x;
+    return val;
   }
 }
 
-bool is_power_of_two(uint buffer_length)
-{
-    if (buffer_length == 0)
-        return 0;
-    while (buffer_length != 1) {
-        if (buffer_length % 2 != 0)
-            return 0;
-        buffer_length = buffer_length / 2;
-    }
-    return 1;
-}

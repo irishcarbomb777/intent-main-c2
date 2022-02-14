@@ -33,16 +33,19 @@ void vActiveState(ActiveStateContext_t *p_ctxActiveState)
 
   // Parse Out Context Pointers
   SensorStateEnum_t *p_eSensorState               = p_ctxActiveState->p_eSensorState;
+  SensorStateEnum_t *p_ePreviousSensorState       = p_ctxActiveState->p_ePreviousSensorState;
   spi_device_handle_t *p_spi                      = p_ctxActiveState->p_spi;
   SemaphoreHandle_t *p_xConnectedClientsSemaphore = p_ctxActiveState->p_xConnectedClientsSemaphore;
   SemaphoreHandle_t *p_xNetworkActiveSemaphore    = p_ctxActiveState->p_xNetworkActiveSemaphore;
   char *p_cConnectedClientsCount                  = p_ctxActiveState->p_cConnectedClientsCount;
 
-  // Give Network Active Semaphore
-  xSemaphoreGive(*p_xNetworkActiveSemaphore);
+  // Give Network Active Semaphore if Coming from Sleep State
+  if (*p_ePreviousSensorState == SENSOR_SLEEP)
+    xSemaphoreGive(*p_xNetworkActiveSemaphore);
 
-  // Set lsm6dsr to Sleep/Active State Mode
-  lsm6dsr_sleep_active_state(p_spi);
+  // Set lsm6dsr to Sleep/Active State Mode if Coming from Ready State
+  if (*p_ePreviousSensorState == SENSOR_READY)
+    lsm6dsr_sleep_active_state(p_spi);
 
   // Begin Active State Loop
   while (*p_eSensorState == SENSOR_ACTIVE)
@@ -55,6 +58,7 @@ void vActiveState(ActiveStateContext_t *p_ctxActiveState)
         // Reset Data Buffers inside Active State
         uintNoConnectionSecondsCount = 0;
         // Set Next State
+        *p_ePreviousSensorState = *p_eSensorState;
         *p_eSensorState = SENSOR_READY;
       }
       else
@@ -66,7 +70,9 @@ void vActiveState(ActiveStateContext_t *p_ctxActiveState)
     if (uintNoConnectionSecondsCount > NO_CONNECT_TIMEOUT_SECONDS)
     {
       // Reset Data Buffers inside Active State
+      ESP_LOGI(TAG, "Active Timeout Detected");
       uintNoConnectionSecondsCount = 0;
+      *p_ePreviousSensorState = *p_eSensorState;
       *p_eSensorState = SENSOR_SLEEP;
     }
   }

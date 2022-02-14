@@ -14,7 +14,7 @@
 #include "sdkconfig.h"
 
 #include "gpio.h"
-#include "rtos_tasks.h"
+// #include "rtos_tasks.h"
 
 void initialize_gpio_w_isr(gpio_config_t *cfg)
 {
@@ -73,17 +73,14 @@ void vLEDPurpleState()
 
 static void gpio_data_ready_isr_handler(void *arg);
 
-void gpio_startup_routine(rtos_tasks_shared_resources_t *rtos_task_resources)
+void gpio_startup_routine(SemaphoreHandle_t *p_xDataReadySemaphore)
 {
-  // Parse out task handles
-  SemaphoreHandle_t *p_xDataReadySemaphore   = rtos_task_resources->p_xDataReadySemaphore;
-
   // Initialize Data Ready interrupt
   gpio_config_t gpio_activity_inactivity_config = {
     .intr_type = GPIO_INTR_POSEDGE,
     .mode = GPIO_MODE_INPUT,
     .pin_bit_mask = INT_PIN_MASK,
-    .pull_down_en = 0,
+    .pull_down_en = 1,
     .pull_up_en = 0,
   };
   initialize_gpio_w_isr(&gpio_activity_inactivity_config);

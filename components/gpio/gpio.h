@@ -3,7 +3,13 @@
 #include "driver/gpio.h"
 #include "sdkconfig.h"
 
-#include "rtos_tasks.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/projdefs.h"
+#include "freertos/queue.h"
+#include "freertos/semphr.h"
+
+// #include "rtos_tasks.h"
 
 #define LED_BLUE_PIN 18
 #define LED_GREEN_PIN 19
@@ -13,7 +19,7 @@
 // Function Prototypes
 void gpio_initialize_output_led();
 void initialize_gpio_w_isr(gpio_config_t *cfg);
-void gpio_startup_routine(rtos_tasks_shared_resources_t *task_handles);
+void gpio_startup_routine(SemaphoreHandle_t *p_xDataReadySemaphore);
 
 void vLEDBlueState();
 void vLEDRedState();

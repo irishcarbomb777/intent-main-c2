@@ -22,7 +22,7 @@ typedef struct NetworkStateMachineTaskContext_t {
   // Signal Semaphores
   SemaphoreHandle_t *p_xConnectedClientsSemaphore;
   SemaphoreHandle_t *p_xStartSetSemaphore;
-  SemaphoreHandle_t *p_xDataTransmitSemaphore;
+  QueueHandle_t *p_xDataTransmitQueue;
   SemaphoreHandle_t *p_xEndSetSemaphore;
   SemaphoreHandle_t *p_xNetworkActiveSemaphore;
   SemaphoreHandle_t *p_xNetworkInactiveSemaphore;
@@ -30,26 +30,30 @@ typedef struct NetworkStateMachineTaskContext_t {
 
   // Shared Data Buffers
   char *p_cConnectedClientsCount;
-  char *p_cDataTransmitBuffer;
 } NetworkStateMachineTaskContext_t;
 
 typedef struct NetworkActiveStateContext_t {
+  // Network State
+  NetworkStateEnum_t *p_eNetworkState;
+
   // Communication Protocols
   esp_mqtt_client_handle_t *p_mqtt_client;
 
   // Signal Semaphores
   SemaphoreHandle_t *p_xConnectedClientsSemaphore;
   SemaphoreHandle_t *p_xStartSetSemaphore;
-  SemaphoreHandle_t *p_xDataTransmitSemaphore;
+  QueueHandle_t *p_xDataTransmitQueue;
   SemaphoreHandle_t *p_xEndSetSemaphore;
   SemaphoreHandle_t *p_xNetworkInactiveSemaphore;
 
   // Shared Data Buffers
-  char *p_connected_clients_count;
-  char *p_data_transmit_buffer;
+  char *p_cConnectedClientsCount;
 } NetworkActiveStateContext_t;
 
 typedef struct NetworkInactiveStateContext_t {
+  // Network State
+  NetworkStateEnum_t *p_eNetworkState;
+
   // Communication Protocols
   esp_mqtt_client_handle_t *p_mqtt_client;
 
@@ -59,3 +63,11 @@ typedef struct NetworkInactiveStateContext_t {
 
 // Network State Machine Task Prototype
 void NetworkStateMachineTask (void *arg);
+
+// Network State Functions
+void vNetworkActiveState(NetworkActiveStateContext_t *p_ctxNetworkActiveState);
+void vNetworkInactiveState(NetworkInactiveStateContext_t *p_ctxNetworkInactiveState);
+
+// Utility Functions
+
+

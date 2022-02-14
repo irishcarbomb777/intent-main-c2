@@ -17,10 +17,8 @@
 #include "SensorStateMachineTask.h"
 #include "NetworkStateMachineTask.h"
 #include "lsm6dsr.h"
-#include "rtos_tasks.h"
+// #include "rtos_tasks.h"
 #include "gpio.h"
-#include "wifi.h"
-#include "intent_mqtt.h"
 
 #define watermark_threshold 300
 typedef struct AppContext_t {
@@ -32,67 +30,67 @@ typedef struct AppContext_t {
   SemaphoreHandle_t xConnectedClientsSemaphore;
   SemaphoreHandle_t xDataReadySemaphore;
   SemaphoreHandle_t xStartSetSemaphore;
-  SemaphoreHandle_t xDataTransmitSemaphore;
+  QueueHandle_t     xDataTransmitQueue;
   SemaphoreHandle_t xEndSetSemaphore;
   SemaphoreHandle_t xNetworkActiveSemaphore;
   SemaphoreHandle_t xNetworkInactiveSemaphore;
 
   // Shared Data Buffers
   char cConnectedClientsCount;
-  char cDataTransmitBuffer[(watermark_threshold*7)+2];
 
 } AppContext_t;
 
 void app_main(void)
 {
+  static const char *TAG = "Main Loop";
+  QueueHandle_t xDataTransmitQueue = xQueueCreate(100, sizeof(char*));
+  if (xDataTransmitQueue != NULL)
+    printf("QUEUE SUCCESSSFULLY CREATED");
   // Initialize Data Structures
   AppContext_t ctxApp = {
     .xConnectedClientsSemaphore = xSemaphoreCreateBinary(),
     .xDataReadySemaphore = xSemaphoreCreateBinary(),
     .xStartSetSemaphore = xSemaphoreCreateBinary(),
-    .xDataTransmitSemaphore = xSemaphoreCreateBinary(),
+    .xDataTransmitQueue = xDataTransmitQueue,
     .xEndSetSemaphore = xSemaphoreCreateBinary(),
     .xNetworkActiveSemaphore = xSemaphoreCreateBinary(),
     .xNetworkInactiveSemaphore = xSemaphoreCreateBinary(),
     .cConnectedClientsCount = 0,
-    .cDataTransmitBuffer = memset(&(ctxApp.cDataTransmitBuffer), 0, sizeof(ctxApp.cDataTransmitBuffer)),
   };
   
   SensorStateMachineTaskContext_t ctxSensorStateMachineTask = {
     .p_xConnectedClientsSemaphore = &(ctxApp.xConnectedClientsSemaphore),
     .p_xDataReadySemaphore = &(ctxApp.xDataReadySemaphore),
     .p_xStartSetSemaphore = &(ctxApp.xStartSetSemaphore),
-    .p_xDataTransmitSemaphore = &(ctxApp.xDataTransmitSemaphore),
+    .p_xDataTransmitQueue = &(ctxApp.xDataTransmitQueue),
     .p_xEndSetSemaphore = &(ctxApp.xEndSetSemaphore),
     .p_xNetworkActiveSemaphore = &(ctxApp.xNetworkActiveSemaphore),
     .p_xNetworkInactiveSemaphore = &(ctxApp.xNetworkInactiveSemaphore),
     .p_cConnectedClientsCount = &(ctxApp.cConnectedClientsCount),
-    .p_cDataTransmitBuffer = &(ctxApp.cDataTransmitBuffer),
   };
 
   NetworkStateMachineTaskContext_t ctxNetworkStateMachineTask = {
     .p_xConnectedClientsSemaphore = (&ctxApp.xConnectedClientsSemaphore),
     .p_xStartSetSemaphore = &(ctxApp.xStartSetSemaphore),
-    .p_xDataTransmitSemaphore = &(ctxApp.xDataTransmitSemaphore),
+    .p_xDataTransmitQueue = &(ctxApp.xDataTransmitQueue),
     .p_xEndSetSemaphore = &(ctxApp.xEndSetSemaphore),
-    .p_xNetworkInactiveSemaphore = &(ctxApp.xNetworkActiveSemaphore),
+    .p_xNetworkActiveSemaphore = &(ctxApp.xNetworkActiveSemaphore),
     .p_xNetworkInactiveSemaphore = &(ctxApp.xNetworkInactiveSemaphore),
     .p_cConnectedClientsCount = &(ctxApp.cConnectedClientsCount),
-    .p_cDataTransmitBuffer = &(ctxApp.cDataTransmitBuffer),
   };
 
   // Initialize Hardware
   ctxSensorStateMachineTask.p_spi = lsm6dsr_startup_routine();  // Get SPI Handle
   gpio_initialize_output_led();
+  gpio_startup_routine(&(ctxApp.xDataReadySemaphore));
 
   // Initialize Tasks
   // Create Tasks on Core 0
-  xTaskCreatePinnedToCore(SensorStateMachineTask, "Sensor State Machine Task", 16384, (void*)&ctxSensorStateMachineTask, 5, &(ctxApp.xSensorStateMachineTaskHandle), 0);
+  xTaskCreatePinnedToCore(SensorStateMachineTask, "Sensor Task", 16384, (void*)&ctxSensorStateMachineTask, 5, &(ctxApp.xSensorStateMachineTaskHandle), 0);
 
+  // Create Tasks on Core 1
+  xTaskCreatePinnedToCore(NetworkStateMachineTask, "Network Task", 16384, (void*)&ctxNetworkStateMachineTask, 5, &(ctxApp.xNetworkStateMachineTaskHandle), 1);
 
-  // Initialize Tasks
-  rtos_tasks_shared_resources_t *p_rtos_task_resources = rtos_tasks_startup_routine(p_spi);
-  gpio_startup_routine(p_rtos_task_resources);
   while(1)
   {
     vTaskDelay(portMAX_DELAY);

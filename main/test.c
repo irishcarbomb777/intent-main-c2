@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdbool.h>
 
 #define ReadyState_XL_ODR 6667
 #define RollbackTime_seconds 3
@@ -17,44 +18,58 @@ typedef struct thing2_t {
 } thing2_t;
 
 int * testfun();
-
+uint circular_add(int x, uint val, uint buffer_length);
+void circular_memcpy( char *cSourceBuffer, uint uintSourceBufferLength,
+                             char *cTargetBuffer, uint *uintTargetBufferIndex, 
+                             uint uintTargetBufferLength);
 int main (){
-  // Declare thing1
-  thing1_t thing1 = {
-    .a = 5,
-    .b = 6,
-  };
-  thing2_t thing2 = {
-    .p_a = &(thing1.a),
-    .p_b = &(thing1.b),
-  };
-  printf(" A from thing2 is: %d", *(thing2.p_a));
-
-
-  int cheese[5] = {1,2,3,4,5};
-  printf("%d\n\n", *(cheese+2));
-
-  char taps_detected = 0;
-  char tap_delta = 5;
-  char Tap_MinDelta = 4;
-  taps_detected += (tap_delta > Tap_MinDelta) ? 1 : 0;
-  printf("%d\n\n", taps_detected);
-
-
-  uint circleBuffer = 0;
-  for (int i = 0; i < 100; i++)
+  
+  // Test Circular Memcpy
+  char target[32];
+  uint targetIndex = 0;
+  char source[] = {1,2,3,4,5};
+  int yo = (int) (ReadyState_XL_ODR/RollbackTime_seconds) ;
+  printf("Yo is: %d\n", yo);
+  for (int i=0; i < 20; i++)
   {
-    circleBuffer = (((circleBuffer | 0xFFF0) - 1) & 0x000F);
-    printf("Output: %d\n", circleBuffer); 
+    circular_memcpy((source), 5, target, &targetIndex, 32);
   }
-  printf("%d\n", RollbackBuffer_length);
 
-  int *p_testVar = testfun();
-  printf("%d\n", *p_testVar);
+  for (int i=0; i < 32; i++)
+  {
+    printf("Index: %d , Data: %d\n", i, target[i]);
+  }
+  // int a = 100;
+  // int b = 3;
+  // int count = 0;
+  // for (int i=0; i < (a*7*b); i+=7*b)
+  // {
+  //   count++;
+  //   printf("%d\n", i);
+  // }
+  // printf("%d\n", count);
+}
 
-  p_testVar = testfun();
-  printf("%d\n", *p_testVar);
-
+void circular_memcpy( char *cSourceBuffer, uint uintSourceBufferLength,
+                             char *cTargetBuffer, uint *uintTargetBufferIndex, 
+                             uint uintTargetBufferLength)
+{
+  // Check if Source Buffer fits in current loop of Target Buffer
+  if ((*uintTargetBufferIndex+uintSourceBufferLength) < uintTargetBufferLength)
+  {
+    // If Source Buffer fits, memcpy
+    memcpy( (cTargetBuffer+*uintTargetBufferIndex), cSourceBuffer, uintSourceBufferLength);
+    *uintTargetBufferIndex += uintSourceBufferLength;
+    printf("Target Index: %d\n", *uintTargetBufferIndex);
+  }
+  else
+  {
+    uint target_space_remaining = uintTargetBufferLength - *uintTargetBufferIndex;
+    memcpy ( (cTargetBuffer+*uintTargetBufferIndex), cSourceBuffer, target_space_remaining);
+    uint source_bytes_remaining = uintSourceBufferLength - target_space_remaining;
+    memcpy ( cTargetBuffer, (cSourceBuffer+target_space_remaining), source_bytes_remaining);
+    *uintTargetBufferIndex = circular_add(uintSourceBufferLength, *uintTargetBufferIndex, uintTargetBufferLength); 
+  }
 }
 
 int * testfun()
@@ -64,6 +79,66 @@ int * testfun()
   return &testVar;
 }
 
+bool is_power_of_two(uint buffer_length)
+{
+    if (buffer_length == 0)
+        return 0;
+    while (buffer_length != 1) {
+        if (buffer_length % 2 != 0)
+            return 0;
+        buffer_length = buffer_length / 2;
+    }
+    return 1;
+}
+uint circular_add(int x, uint val, uint buffer_length)
+{
+  // Create Logging Tag
+  static const char *TAG = "Circular Add Log";
+  static uint rollover;
+  if ((val+x)<buffer_length)
+  {
+    val += x;
+    return val;
+  }
+  else
+  {
+    val = (val+x)-buffer_length;
+    return val;
+  }
+}
 
 
 
+
+
+
+
+// uint circular_add(int x, uint val, uint buffer_length)
+// {
+//   // Create Logging Tag
+//   static const char *TAG = "Circular Add Log";
+//   if (is_power_of_two(buffer_length))
+//   {
+//     uint mask = ~(buffer_length-1);
+//     val = (((val | mask) + x) & (buffer_length-1));
+//     return val;
+//   }
+//   else
+//   {
+//     ESP_LOGI(TAG, "Buffer Length Specified is not a power of 2");
+//     return 0;
+//   }
+// }
+
+
+// bool is_power_of_two(uint buffer_length)
+// {
+//     if (buffer_length == 0)
+//         return 0;
+//     while (buffer_length != 1) {
+//         if (buffer_length % 2 != 0)
+//             return 0;
+//         buffer_length = buffer_length / 2;
+//     }
+//     return 1;
+// }
