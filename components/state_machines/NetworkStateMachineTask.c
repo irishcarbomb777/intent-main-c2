@@ -20,6 +20,8 @@
 #include "wifi.h"
 #include "intent_mqtt.h"
 
+#define SENSOR_ID "sensor_01"
+
 void NetworkStateMachineTask(void *arg)
 {
   // Create Logging Tag
@@ -37,6 +39,12 @@ void NetworkStateMachineTask(void *arg)
                                               p_ctxNetworkStateMachineTaskContext->p_xConnectedClientsSemaphore, 
                                               p_ctxNetworkStateMachineTaskContext->p_cConnectedClientsCount
                                             );
+  // Publish to Active Sensors Channel
+  esp_mqtt_client_publish(*p_mqtt_client, "active_sensors", SENSOR_ID, 0, 0, 0);
+
+  // Subscribe to Client Connections Channel
+  esp_mqtt_client_subscribe(*p_mqtt_client, "client_connections/"SENSOR_ID, 1);
+
   // Create Network Active State Context
   NetworkActiveStateContext_t ctxNetworkActiveState = {
     .p_eNetworkState = &eNetworkState,

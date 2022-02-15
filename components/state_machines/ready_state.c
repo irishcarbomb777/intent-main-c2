@@ -32,27 +32,27 @@
 #define SetDetectionDerivativeSumThreshold (Datapoint0_1g_Preseed - (Datapoint0_1g_Preseed*PercentFrom1g))
 
 // Declare Static Function Prototypes
-static void ResetReadyStateMemoryTask(void *arg);
 static char detect_set(uint uintDecimationFactor, char *p_cSourceBuffer, uint uintSourceBufferLength);
 static void circular_memcpy( char *p_cSourceBuffer, uint uintSourceBufferLength,
                              char *p_cTargetBuffer, uint *p_uintTargetBufferIndex, 
                              uint uintTargetBufferLength);
 static void lsm6dsr_ready_running_state(spi_device_handle_t *p_spi);
-
+static void lsm6dsr_clear_FIFO(spi_device_handle_t *p_spi);
 
 void vReadyState(ReadyStateContext_t *p_ctxReadyState)
 {
   // Create Logging Tag
   static const char *TAG = "Ready State Log";
-  ESP_LOGI(TAG, "Entering Ready State!");
+
   // Create Data Buffers
   static BaseType_t xDataReadyResult;
   static BaseType_t xDataTransmitResult;
   static BaseType_t xConnectedClientsResult;
   static char cFifoReadDataBuffer[FifoReadDataBufferLength];
+  static char cFifoClearDataBuffer[512];
   static char cRollbackBuffer[RollbackBuffer_byteLength];
   static uint cRollbackBufferIndex = 0;
-  ESP_LOGI(TAG, "Finished Allocation!");
+  static char *p_cPointToRollbackAddress;
 
   // Parse Out Context Pointers
   SensorStateEnum_t *p_eSensorState               = p_ctxReadyState->p_eSensorState;
@@ -61,11 +61,25 @@ void vReadyState(ReadyStateContext_t *p_ctxReadyState)
   SemaphoreHandle_t *p_xDataReadySemaphore        = p_ctxReadyState->p_xDataReadySemaphore;
   QueueHandle_t *p_xDataTransmitQueue             = p_ctxReadyState->p_xDataTransmitQueue;
   SemaphoreHandle_t *p_xConnectedClientsSemaphore = p_ctxReadyState->p_xConnectedClientsSemaphore;
+  SemaphoreHandle_t *p_xNetworkActiveSemaphore    = p_ctxReadyState->p_xNetworkActiveSemaphore;
   char *p_cConnectedClientsCount                  = p_ctxReadyState->p_cConnectedClientsCount;
 
-  // Set lsm6dsr to High Data Rate if Coming from Sensor Ready
-  if (*p_ePreviousSensorState == SENSOR_ACTIVE)
+  // Give Network Active Semaphore if Coming from Sleep State
+  if (*p_ePreviousSensorState == SENSOR_SLEEP)
+    xSemaphoreGive(*p_xNetworkActiveSemaphore);
     lsm6dsr_ready_running_state(p_spi);
+
+  // Reset Rollback Buffer
+  memset(cRollbackBuffer, 0, RollbackBuffer_byteLength);
+  cRollbackBufferIndex = 0;
+
+  // Clear Junk Data
+  for (int i = 0; i < 3; i++)
+  {
+    xDataReadyResult = xSemaphoreTake(*p_xDataReadySemaphore, pdMS_TO_TICKS(1000));
+    // Read Data from FIFO
+    lsm6dsr_batch_read_fifo(p_spi, WATERMARK_THRESHOLD, cFifoReadDataBuffer);
+  }
 
   // Begin Ready State Loop
   while (*p_eSensorState == SENSOR_READY)
@@ -87,15 +101,12 @@ void vReadyState(ReadyStateContext_t *p_ctxReadyState)
         // Push Data from Rollback Buffer onto Network Task Queue
         for (int i=0; i < (RollbackBuffer_length/WATERMARK_THRESHOLD); i++)
         {
-          
-          xDataTransmitResult = xQueueSend(*p_xDataTransmitQueue, (cRollbackBuffer+cRollbackBufferIndex), 0);
+          p_cPointToRollbackAddress = &cRollbackBuffer[cRollbackBufferIndex];
+          xDataTransmitResult = xQueueSend(*p_xDataTransmitQueue, (void*)(&p_cPointToRollbackAddress), 0);
           cRollbackBufferIndex = circular_add((WATERMARK_THRESHOLD*7), cRollbackBufferIndex, RollbackBuffer_byteLength);
           if (!xDataTransmitResult)
             ESP_LOGI(TAG, "Add to Queue Failed!");
         }
-        // Reset Data Buffer Resources
-        cRollbackBufferIndex = 0;
-        xTaskCreatePinnedToCore(ResetReadyStateMemoryTask, "Reset Memory Task", 4096, (void*)cRollbackBuffer, 1, NULL, 0);
 
         // Perform State Transition
         *p_ePreviousSensorState = *p_eSensorState;
@@ -105,41 +116,25 @@ void vReadyState(ReadyStateContext_t *p_ctxReadyState)
     else
     {
       ESP_LOGI(TAG, "Data Ready Timeout!");
-      // Read Data from FIFO
-      lsm6dsr_batch_read_fifo(p_spi, WATERMARK_THRESHOLD, cFifoReadDataBuffer);
-
+      // Clear Data from FIFO
+      lsm6dsr_clear_FIFO(p_spi);
     }
     // Check for Connected Clients
     xConnectedClientsResult = xSemaphoreTake(*p_xConnectedClientsSemaphore, 0);
     if (xConnectedClientsResult && (*p_cConnectedClientsCount) < 1)
     {
-      // Reset Data Buffer Resources
-      cRollbackBufferIndex = 0;
-      memset(cRollbackBuffer, 0, RollbackBuffer_byteLength);
       // Perform State Transition
       *p_ePreviousSensorState = *p_eSensorState;
-      *p_eSensorState = SENSOR_ACTIVE;
+      *p_eSensorState = SENSOR_SLEEP;
     }
   }
 }
 
-static void ResetReadyStateMemoryTask(void *arg)
-{ // Task resets memory of buffer and then kills self
-  
-  // Create Logging Tag
-  static const char *TAG = "Reset Ready State Memory Task Log";
-
-  // Parse out pointers to be reset
-  char *p_cRollbackBuffer = (char *)arg;
-
-  // Reset Buffer
-  memset(p_cRollbackBuffer, 0, RollbackBuffer_byteLength);
-
-  vTaskDelete(NULL);
-}
-
 static char detect_set(uint uintDecimationFactor, char *p_cSourceBuffer, uint uintSourceBufferLength)
 {
+  // Create Tag
+  static const char *TAG = "Detect Set Log";
+
   // Calculate Number of Data Copies
   static uint data_copies = ((FifoReadDataBufferLength)/7)/Decimation_Factor;
   static int16_t xyz_data_buffer[3];
@@ -158,21 +153,22 @@ static char detect_set(uint uintDecimationFactor, char *p_cSourceBuffer, uint ui
 
     // Calculate magnitude from xyz buffer and place into Target Buffer
     *(dSetDetectionBuffer+uintSetDetectionBufferIndex) = (pow( (pow( (double) xyz_data_buffer[0], 2) + pow((double) xyz_data_buffer[1], 2) + pow((double) xyz_data_buffer[2], 2)), 0.5 ));
-
+    // ESP_LOGI(TAG, "Magnitude is: %.2f", *(dSetDetectionBuffer+uintSetDetectionBufferIndex));
     // Calculate Derivative (mag[n]-mag[n-1]) and add to running sum
     dRunningSumOfDifference +=   *(dSetDetectionBuffer+uintSetDetectionBufferIndex)
                                - *(dSetDetectionBuffer + circular_subtract(1, uintSetDetectionBufferIndex, SetDetectionBufferLength));
-
+    // ESP_LOGI(TAG, "Running Sum Diff Add: %.2f", dRunningSumOfDifference);
     // Subtract Least Recent Derivative (mag[n+2]-mag[n+1])
     dRunningSumOfDifference -=   *(dSetDetectionBuffer + circular_add(2, uintSetDetectionBufferIndex, SetDetectionBufferLength))
                                - *(dSetDetectionBuffer + circular_add(1, uintSetDetectionBufferIndex, SetDetectionBufferLength));
-
+    // ESP_LOGI(TAG, "Running Sum Diff Sub: %.2f", dRunningSumOfDifference);
     if (dRunningSumOfDifference > dRunningSumOfDifferenceThreshold)
     { 
       // Reset Static Variabels
       dRunningSumOfDifference = 0;
       uintSetDetectionBufferIndex = 1;
       dSetDetectionBuffer[0] = Datapoint0_1g_Preseed;
+
       // Set Start Detected
       return 1;
     }
@@ -222,5 +218,12 @@ static void lsm6dsr_ready_running_state(spi_device_handle_t *p_spi)
   // lsm6dsr_write_register(p_spi, CTRL2_G, 0xA4);
 
   // Start the FIFO
+  lsm6dsr_FIFO_start(p_spi);
+}
+
+static void lsm6dsr_clear_FIFO(spi_device_handle_t *p_spi)
+{
+  // Stop and Start the FIFO
+  lsm6dsr_FIFO_stop(p_spi);
   lsm6dsr_FIFO_start(p_spi);
 }

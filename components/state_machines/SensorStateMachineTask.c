@@ -29,24 +29,34 @@ void SensorStateMachineTask(void *arg)
   // Type cast Sensor State Machine Context from void pointer to Context Pointer
   SensorStateMachineTaskContext_t *p_ctxSensorStateMachineTaskContext = (SensorStateMachineTaskContext_t*) arg;
 
-  // Create Sleep State Context
-  SleepStateContext_t ctxSleepState = {
-    .p_eSensorState = &eSensorState,
-    .p_ePreviousSensorState = &ePreviousSensorState,
-    .p_spi = p_ctxSensorStateMachineTaskContext->p_spi,
-    .p_xDataReadySemaphore = p_ctxSensorStateMachineTaskContext->p_xDataReadySemaphore,
-    .p_xNetworkInactiveSemaphore = p_ctxSensorStateMachineTaskContext->p_xNetworkInactiveSemaphore,
-  };
+  // // Create Sleep State Context
+  // SleepStateContext_t ctxSleepState = {
+  //   .p_eSensorState = &eSensorState,
+  //   .p_ePreviousSensorState = &ePreviousSensorState,
+  //   .p_spi = p_ctxSensorStateMachineTaskContext->p_spi,
+  //   .p_xDataReadySemaphore = p_ctxSensorStateMachineTaskContext->p_xDataReadySemaphore,
+  //   .p_xNetworkInactiveSemaphore = p_ctxSensorStateMachineTaskContext->p_xNetworkInactiveSemaphore,
+  // };
 
-  // Create Active State Context
-  ActiveStateContext_t ctxActiveState = {
+  // Create Sleep State2 Context
+  SleepState2Context_t ctxSleepState2 = {
     .p_eSensorState = &eSensorState,
     .p_ePreviousSensorState = &ePreviousSensorState,
     .p_spi = p_ctxSensorStateMachineTaskContext->p_spi,
     .p_xConnectedClientsSemaphore = p_ctxSensorStateMachineTaskContext->p_xConnectedClientsSemaphore,
-    .p_xNetworkActiveSemaphore = p_ctxSensorStateMachineTaskContext->p_xNetworkActiveSemaphore,
+    .p_xNetworkInactiveSemaphore = p_ctxSensorStateMachineTaskContext->p_xNetworkInactiveSemaphore,
     .p_cConnectedClientsCount = p_ctxSensorStateMachineTaskContext->p_cConnectedClientsCount,
   };
+
+  // // Create Active State Context
+  // ActiveStateContext_t ctxActiveState = {
+  //   .p_eSensorState = &eSensorState,
+  //   .p_ePreviousSensorState = &ePreviousSensorState,
+  //   .p_spi = p_ctxSensorStateMachineTaskContext->p_spi,
+  //   .p_xConnectedClientsSemaphore = p_ctxSensorStateMachineTaskContext->p_xConnectedClientsSemaphore,
+  //   .p_xNetworkActiveSemaphore = p_ctxSensorStateMachineTaskContext->p_xNetworkActiveSemaphore,
+  //   .p_cConnectedClientsCount = p_ctxSensorStateMachineTaskContext->p_cConnectedClientsCount,
+  // };
 
   // Create Ready State Context
   ReadyStateContext_t ctxReadyState = {
@@ -57,6 +67,7 @@ void SensorStateMachineTask(void *arg)
     .p_xDataTransmitQueue = p_ctxSensorStateMachineTaskContext->p_xDataTransmitQueue,
     .p_xConnectedClientsSemaphore = p_ctxSensorStateMachineTaskContext->p_xConnectedClientsSemaphore,
     .p_cConnectedClientsCount = p_ctxSensorStateMachineTaskContext->p_cConnectedClientsCount,
+    .p_xNetworkActiveSemaphore = p_ctxSensorStateMachineTaskContext->p_xNetworkActiveSemaphore,
   };
 
   // // Create Running State Context
@@ -78,13 +89,13 @@ void SensorStateMachineTask(void *arg)
     switch (eSensorState)
     {
       case SENSOR_SLEEP:
-        vLEDRedState();
-        vSleepState(&ctxSleepState);
-        break;
-      case SENSOR_ACTIVE:
         vLEDBlueState();
-        vActiveState(&ctxActiveState);
+        vSleepState2(&ctxSleepState2);
         break;
+      // case SENSOR_ACTIVE:
+      //   vLEDBlueState();
+      //   vActiveState(&ctxActiveState);
+      //   break;
       case SENSOR_READY:
         vLEDPurpleState();
         vReadyState(&ctxReadyState);
@@ -103,6 +114,23 @@ void SensorStateMachineTask(void *arg)
 
 // Sensor State Machine Utility Functions
 // ANY FUNCTIONS USED BY MULTIPLE STATES ARE HERE
+
+void lsm6dsr_sleep_state(spi_device_handle_t *p_spi)
+{
+  // Turn off all interrupts
+  lsm6dsr_write_register(p_spi, INT1_CTRL, 0x00);
+
+  // Turn off XL
+  lsm6dsr_write_register(p_spi, CTRL1_XL, 0x08);
+
+  // Turn off Gyroscope
+  lsm6dsr_write_register(p_spi, CTRL2_G, 0x04);
+
+  // Set to low power
+  lsm6dsr_write_register(p_spi, CTRL6_C, 0x10);
+}
+
+
 void lsm6dsr_sleep_active_state(spi_device_handle_t *p_spi)
 {
   // Turn off all interrupts

@@ -26,7 +26,6 @@ void vNetworkInactiveState(NetworkInactiveStateContext_t *p_ctxNetworkInactiveSt
 {
   // Create Logging Tag
   static const char *TAG = "Network Inactive State Log";
-  ESP_LOGI(TAG, "Network Inactive State...");
   // Initialize Static Data Buffers
 
   // Parse out Context Pointers
@@ -34,15 +33,14 @@ void vNetworkInactiveState(NetworkInactiveStateContext_t *p_ctxNetworkInactiveSt
   esp_mqtt_client_handle_t *p_mqtt_client = p_ctxNetworkInactiveState->p_mqtt_client;
   SemaphoreHandle_t *p_xNetworkActiveSemaphore = p_ctxNetworkInactiveState->p_xNetworkActiveSemaphore;
 
-  // Unsubscribe from MQTT Channels
-  esp_mqtt_client_unsubscribe(*p_mqtt_client, "client_connections");
+  // // Unsubscribe from MQTT Channels
+  // esp_mqtt_client_unsubscribe(*p_mqtt_client, "client_connections");
 
   // Set Networking to Low Power Mode
   wifi_enable_modem_sleep();
 
   while((*p_eNetworkState) == NETWORK_INACTIVE)
   {
-    ESP_LOGI(TAG, "Network Inactive State...");
     if (xSemaphoreTake(*p_xNetworkActiveSemaphore, pdMS_TO_TICKS(1000)))
       *p_eNetworkState = NETWORK_ACTIVE;
   }

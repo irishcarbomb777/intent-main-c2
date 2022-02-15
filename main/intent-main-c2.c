@@ -46,6 +46,8 @@ void app_main(void)
   QueueHandle_t xDataTransmitQueue = xQueueCreate(100, sizeof(char*));
   if (xDataTransmitQueue != NULL)
     printf("QUEUE SUCCESSSFULLY CREATED");
+  printf("Char Pointer Size: %d", sizeof(char*));
+  printf("Int Size: %d", sizeof(int));
   // Initialize Data Structures
   AppContext_t ctxApp = {
     .xConnectedClientsSemaphore = xSemaphoreCreateBinary(),
