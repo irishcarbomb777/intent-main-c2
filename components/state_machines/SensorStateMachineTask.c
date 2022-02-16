@@ -23,23 +23,16 @@ void SensorStateMachineTask(void *arg)
 {
   // Create Logging Tag
   static const char *TAG = "Sensor State Machine Task Log";
+
   // Create Sensor State
   SensorStateEnum_t eSensorState         = SENSOR_SLEEP;
   SensorStateEnum_t ePreviousSensorState = SENSOR_SLEEP;
+
   // Type cast Sensor State Machine Context from void pointer to Context Pointer
   SensorStateMachineTaskContext_t *p_ctxSensorStateMachineTaskContext = (SensorStateMachineTaskContext_t*) arg;
 
-  // // Create Sleep State Context
-  // SleepStateContext_t ctxSleepState = {
-  //   .p_eSensorState = &eSensorState,
-  //   .p_ePreviousSensorState = &ePreviousSensorState,
-  //   .p_spi = p_ctxSensorStateMachineTaskContext->p_spi,
-  //   .p_xDataReadySemaphore = p_ctxSensorStateMachineTaskContext->p_xDataReadySemaphore,
-  //   .p_xNetworkInactiveSemaphore = p_ctxSensorStateMachineTaskContext->p_xNetworkInactiveSemaphore,
-  // };
-
-  // Create Sleep State2 Context
-  SleepState2Context_t ctxSleepState2 = {
+  // Create Sleep State Context
+  SleepStateContext_t ctxSleepState = {
     .p_eSensorState = &eSensorState,
     .p_ePreviousSensorState = &ePreviousSensorState,
     .p_spi = p_ctxSensorStateMachineTaskContext->p_spi,
@@ -47,16 +40,6 @@ void SensorStateMachineTask(void *arg)
     .p_xNetworkInactiveSemaphore = p_ctxSensorStateMachineTaskContext->p_xNetworkInactiveSemaphore,
     .p_cConnectedClientsCount = p_ctxSensorStateMachineTaskContext->p_cConnectedClientsCount,
   };
-
-  // // Create Active State Context
-  // ActiveStateContext_t ctxActiveState = {
-  //   .p_eSensorState = &eSensorState,
-  //   .p_ePreviousSensorState = &ePreviousSensorState,
-  //   .p_spi = p_ctxSensorStateMachineTaskContext->p_spi,
-  //   .p_xConnectedClientsSemaphore = p_ctxSensorStateMachineTaskContext->p_xConnectedClientsSemaphore,
-  //   .p_xNetworkActiveSemaphore = p_ctxSensorStateMachineTaskContext->p_xNetworkActiveSemaphore,
-  //   .p_cConnectedClientsCount = p_ctxSensorStateMachineTaskContext->p_cConnectedClientsCount,
-  // };
 
   // Create Ready State Context
   ReadyStateContext_t ctxReadyState = {
@@ -68,21 +51,21 @@ void SensorStateMachineTask(void *arg)
     .p_xConnectedClientsSemaphore = p_ctxSensorStateMachineTaskContext->p_xConnectedClientsSemaphore,
     .p_cConnectedClientsCount = p_ctxSensorStateMachineTaskContext->p_cConnectedClientsCount,
     .p_xNetworkActiveSemaphore = p_ctxSensorStateMachineTaskContext->p_xNetworkActiveSemaphore,
+    .p_xStartSetSemaphore = p_ctxSensorStateMachineTaskContext->p_xStartSetSemaphore,
   };
 
-  // // Create Running State Context
-  // RunningStateContext_t ctxRunningState = {
-  //   .p_eSensorState = &eSensorState,
-  //   .p_ePreviousSensorState = &ePreviousSensorState,
-  //   .p_spi = p_ctxSensorStateMachineTaskContext->p_spi,
-  //   .p_xStartSetSemaphore = p_ctxSensorStateMachineTaskContext->p_xStartSetSemaphore,
-  //   .p_xDataTransmitQueue = p_ctxSensorStateMachineTaskContext->p_xDataTransmitQueue,
-  //   .p_xEndSetSemaphore = p_ctxSensorStateMachineTaskContext->p_xEndSetSemaphore,
-  //   .p_xDataReadySemaphore = p_ctxSensorStateMachineTaskContext->p_xDataReadySemaphore,
-  // };
+  // Create Running State Context
+  RunningStateContext_t ctxRunningState = {
+    .p_eSensorState = &eSensorState,
+    .p_ePreviousSensorState = &ePreviousSensorState,
+    .p_spi = p_ctxSensorStateMachineTaskContext->p_spi,
+    .p_xDataTransmitQueue = p_ctxSensorStateMachineTaskContext->p_xDataTransmitQueue,
+    .p_xEndSetSemaphore = p_ctxSensorStateMachineTaskContext->p_xEndSetSemaphore,
+    .p_xDataReadySemaphore = p_ctxSensorStateMachineTaskContext->p_xDataReadySemaphore,
+  };
 
   // Set lsm6dsr to Initial Sleep State 
-  lsm6dsr_sleep_active_state(p_ctxSensorStateMachineTaskContext->p_spi);
+  lsm6dsr_sleep_state(p_ctxSensorStateMachineTaskContext->p_spi);
 
   while (1)
   {
@@ -90,21 +73,15 @@ void SensorStateMachineTask(void *arg)
     {
       case SENSOR_SLEEP:
         vLEDBlueState();
-        vSleepState2(&ctxSleepState2);
+        vSleepState(&ctxSleepState);
         break;
-      // case SENSOR_ACTIVE:
-      //   vLEDBlueState();
-      //   vActiveState(&ctxActiveState);
-      //   break;
       case SENSOR_READY:
         vLEDPurpleState();
         vReadyState(&ctxReadyState);
         break;
       case SENSOR_RUNNING:
         vLEDGreenState();
-        eSensorState = SENSOR_READY;
-        vTaskDelay(pdMS_TO_TICKS(3000));
-        // vRunningState(&ctxRunningState);
+        vRunningState(&ctxRunningState);
         break;
       default:
         break;
@@ -128,28 +105,6 @@ void lsm6dsr_sleep_state(spi_device_handle_t *p_spi)
 
   // Set to low power
   lsm6dsr_write_register(p_spi, CTRL6_C, 0x10);
-}
-
-
-void lsm6dsr_sleep_active_state(spi_device_handle_t *p_spi)
-{
-  // Turn off all interrupts
-  lsm6dsr_write_register(p_spi, INT1_CTRL, 0x00);
-
-  // Turn off XL
-  lsm6dsr_write_register(p_spi, CTRL1_XL, 0x08);
-
-  // Turn off Gyroscope
-  lsm6dsr_write_register(p_spi, CTRL2_G, 0x04);
-
-  // Set to low power
-  lsm6dsr_write_register(p_spi, CTRL6_C, 0x10);
-
-  // Set Data Ready Interrupt
-  lsm6dsr_write_register(p_spi, INT1_CTRL, 0x01);
-
-  // Set ODR to 52Hz
-  lsm6dsr_write_register(p_spi, CTRL1_XL, 0x38);
 }
 
 void read_write_magnitude_to_buffer(spi_device_handle_t *p_spi, double *p_dBuffer, uint *p_uintIndex)
@@ -195,5 +150,33 @@ uint circular_subtract(int x, uint val, uint buffer_length)
     val -= x;
     return val;
   }
+}
+
+void circular_memcpy( char *p_cSourceBuffer, uint uintSourceBufferLength,
+                             char *p_cTargetBuffer, uint *p_uintTargetBufferIndex, 
+                             uint uintTargetBufferLength)
+{
+  // Check if Source Buffer fits in current loop of Target Buffer
+  if ((*p_uintTargetBufferIndex+uintSourceBufferLength) < uintTargetBufferLength)
+  {
+    // If Source Buffer fits, memcpy
+    memcpy( (p_cTargetBuffer+*p_uintTargetBufferIndex), p_cSourceBuffer, uintSourceBufferLength);
+    *p_uintTargetBufferIndex += uintSourceBufferLength;
+  }
+  else
+  {
+    uint target_space_remaining = uintTargetBufferLength - *p_uintTargetBufferIndex;
+    memcpy ( (p_cTargetBuffer+*p_uintTargetBufferIndex), p_cSourceBuffer, target_space_remaining);
+    uint source_bytes_remaining = uintSourceBufferLength - target_space_remaining;
+    memcpy ( p_cTargetBuffer, (p_cSourceBuffer+target_space_remaining), source_bytes_remaining);
+    *p_uintTargetBufferIndex = circular_add(uintSourceBufferLength, *p_uintTargetBufferIndex, uintTargetBufferLength); 
+  }
+}
+
+void lsm6dsr_clear_FIFO(spi_device_handle_t *p_spi)
+{
+  // Stop and Start the FIFO
+  lsm6dsr_FIFO_stop(p_spi);
+  lsm6dsr_FIFO_start(p_spi);
 }
 

@@ -23,7 +23,7 @@
 #define WATERMARK_THRESHOLD 300
 #define FifoReadDataBufferLength ((WATERMARK_THRESHOLD*7)+1)
 #define ReadyState_XL_ODR 6667
-#define RollbackBuffer_length 18000 // 2.69 seconds
+#define RollbackBuffer_length 15000 // 2.24 seconds
 #define RollbackBuffer_byteLength (RollbackBuffer_length*7)
 #define Decimation_Factor 3         // Roughly 444 samples / 0.2s
 #define SetDetectionBufferLength 512  // Roughly 0.23s buffer length
@@ -33,11 +33,7 @@
 
 // Declare Static Function Prototypes
 static char detect_set(uint uintDecimationFactor, char *p_cSourceBuffer, uint uintSourceBufferLength);
-static void circular_memcpy( char *p_cSourceBuffer, uint uintSourceBufferLength,
-                             char *p_cTargetBuffer, uint *p_uintTargetBufferIndex, 
-                             uint uintTargetBufferLength);
 static void lsm6dsr_ready_running_state(spi_device_handle_t *p_spi);
-static void lsm6dsr_clear_FIFO(spi_device_handle_t *p_spi);
 
 void vReadyState(ReadyStateContext_t *p_ctxReadyState)
 {
@@ -49,7 +45,6 @@ void vReadyState(ReadyStateContext_t *p_ctxReadyState)
   static BaseType_t xDataTransmitResult;
   static BaseType_t xConnectedClientsResult;
   static char cFifoReadDataBuffer[FifoReadDataBufferLength];
-  static char cFifoClearDataBuffer[512];
   static char cRollbackBuffer[RollbackBuffer_byteLength];
   static uint cRollbackBufferIndex = 0;
   static char *p_cPointToRollbackAddress;
@@ -154,7 +149,7 @@ static char detect_set(uint uintDecimationFactor, char *p_cSourceBuffer, uint ui
     // Calculate magnitude from xyz buffer and place into Target Buffer
     *(dSetDetectionBuffer+uintSetDetectionBufferIndex) = (pow( (pow( (double) xyz_data_buffer[0], 2) + pow((double) xyz_data_buffer[1], 2) + pow((double) xyz_data_buffer[2], 2)), 0.5 ));
     // ESP_LOGI(TAG, "Magnitude is: %.2f", *(dSetDetectionBuffer+uintSetDetectionBufferIndex));
-    // Calculate Derivative (mag[n]-mag[n-1]) and add to running sum
+    // Calculate Most Recent Derivative (mag[n]-mag[n-1]) and add to running sum
     dRunningSumOfDifference +=   *(dSetDetectionBuffer+uintSetDetectionBufferIndex)
                                - *(dSetDetectionBuffer + circular_subtract(1, uintSetDetectionBufferIndex, SetDetectionBufferLength));
     // ESP_LOGI(TAG, "Running Sum Diff Add: %.2f", dRunningSumOfDifference);
@@ -167,8 +162,8 @@ static char detect_set(uint uintDecimationFactor, char *p_cSourceBuffer, uint ui
       // Reset Static Variabels
       dRunningSumOfDifference = 0;
       uintSetDetectionBufferIndex = 1;
+      memset(dSetDetectionBuffer, 0, SetDetectionBufferLength*sizeof(double));
       dSetDetectionBuffer[0] = Datapoint0_1g_Preseed;
-
       // Set Start Detected
       return 1;
     }
@@ -176,27 +171,6 @@ static char detect_set(uint uintDecimationFactor, char *p_cSourceBuffer, uint ui
     uintSetDetectionBufferIndex = circular_add(1, uintSetDetectionBufferIndex, SetDetectionBufferLength);
   }
   return 0;
-}
-
-static void circular_memcpy( char *p_cSourceBuffer, uint uintSourceBufferLength,
-                             char *p_cTargetBuffer, uint *p_uintTargetBufferIndex, 
-                             uint uintTargetBufferLength)
-{
-  // Check if Source Buffer fits in current loop of Target Buffer
-  if ((*p_uintTargetBufferIndex+uintSourceBufferLength) < uintTargetBufferLength)
-  {
-    // If Source Buffer fits, memcpy
-    memcpy( (p_cTargetBuffer+*p_uintTargetBufferIndex), p_cSourceBuffer, uintSourceBufferLength);
-    *p_uintTargetBufferIndex += uintSourceBufferLength;
-  }
-  else
-  {
-    uint target_space_remaining = uintTargetBufferLength - *p_uintTargetBufferIndex;
-    memcpy ( (p_cTargetBuffer+*p_uintTargetBufferIndex), p_cSourceBuffer, target_space_remaining);
-    uint source_bytes_remaining = uintSourceBufferLength - target_space_remaining;
-    memcpy ( p_cTargetBuffer, (p_cSourceBuffer+target_space_remaining), source_bytes_remaining);
-    *p_uintTargetBufferIndex = circular_add(uintSourceBufferLength, *p_uintTargetBufferIndex, uintTargetBufferLength); 
-  }
 }
 
 static void lsm6dsr_ready_running_state(spi_device_handle_t *p_spi)
@@ -221,9 +195,4 @@ static void lsm6dsr_ready_running_state(spi_device_handle_t *p_spi)
   lsm6dsr_FIFO_start(p_spi);
 }
 
-static void lsm6dsr_clear_FIFO(spi_device_handle_t *p_spi)
-{
-  // Stop and Start the FIFO
-  lsm6dsr_FIFO_stop(p_spi);
-  lsm6dsr_FIFO_start(p_spi);
-}
+

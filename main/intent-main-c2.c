@@ -44,10 +44,7 @@ void app_main(void)
 {
   static const char *TAG = "Main Loop";
   QueueHandle_t xDataTransmitQueue = xQueueCreate(100, sizeof(char*));
-  if (xDataTransmitQueue != NULL)
-    printf("QUEUE SUCCESSSFULLY CREATED");
-  printf("Char Pointer Size: %d", sizeof(char*));
-  printf("Int Size: %d", sizeof(int));
+
   // Initialize Data Structures
   AppContext_t ctxApp = {
     .xConnectedClientsSemaphore = xSemaphoreCreateBinary(),
@@ -88,10 +85,10 @@ void app_main(void)
 
   // Initialize Tasks
   // Create Tasks on Core 0
-  xTaskCreatePinnedToCore(SensorStateMachineTask, "Sensor Task", 16384, (void*)&ctxSensorStateMachineTask, 5, &(ctxApp.xSensorStateMachineTaskHandle), 0);
+  xTaskCreatePinnedToCore(SensorStateMachineTask, "Sensor Task", 8192, (void*)&ctxSensorStateMachineTask, 5, &(ctxApp.xSensorStateMachineTaskHandle), 0);
 
   // Create Tasks on Core 1
-  xTaskCreatePinnedToCore(NetworkStateMachineTask, "Network Task", 16384, (void*)&ctxNetworkStateMachineTask, 5, &(ctxApp.xNetworkStateMachineTaskHandle), 1);
+  xTaskCreatePinnedToCore(NetworkStateMachineTask, "Network Task", 8192, (void*)&ctxNetworkStateMachineTask, 5, &(ctxApp.xNetworkStateMachineTaskHandle), 1);
 
   while(1)
   {
